@@ -12,14 +12,36 @@ document.addEventListener("DOMContentLoaded", function () {
 
   async function fetchMetadata() {
     try {
-      let [tab] = await chrome.tabs.query({
+      // アクティブなタブを取得
+      const tabs = await chrome.tabs.query({
         active: true,
         currentWindow: true,
       });
 
-      chrome.scripting.executeScript(
-        {
-          target: { tabId: tab.id },
+      // タブが存在しない場合のエラーハンドリング
+      if (!tabs || tabs.length === 0) {
+        console.error("No active tab found");
+        return;
+      }
+
+      const activeTab = tabs[0];
+
+      // タブIDの存在確認
+      if (!activeTab.id) {
+        console.error("No tab ID found");
+        return;
+      }
+
+      // スクリプト実行の権限チェック
+      if (!activeTab.url || !activeTab.url.startsWith("http")) {
+        console.error("Cannot access this page. URL:", activeTab.url);
+        return;
+      }
+
+      // executeScriptの実行
+      await chrome.scripting
+        .executeScript({
+          target: { tabId: activeTab.id },
           function: () => {
             const getMetadata = () => {
               const title = document.title;
@@ -45,6 +67,7 @@ document.addEventListener("DOMContentLoaded", function () {
             };
 
             const decodeText = (text) => {
+              if (!text) return "";
               try {
                 if (text === decodeURIComponent(text)) {
                   return text;
@@ -64,19 +87,20 @@ document.addEventListener("DOMContentLoaded", function () {
               url: metadata.url,
             };
           },
-        },
-        ([result]) => {
+        })
+        .then(([result]) => {
           if (result?.result) {
             const data = result.result;
-            document.getElementById("title").value = data.title;
-            document.getElementById("author").value = data.author;
-            document.getElementById("year").value = data.year;
-            // URLを保存
-            currentUrl = data.url;
+            document.getElementById("title").value = data.title || "";
+            document.getElementById("author").value = data.author || "";
+            document.getElementById("year").value = data.year || "";
+            currentUrl = data.url || "";
             generateCitations();
           }
-        }
-      );
+        })
+        .catch((error) => {
+          console.error("Script execution error:", error);
+        });
     } catch (error) {
       console.error("Error in fetchMetadata:", error);
     }
@@ -84,13 +108,22 @@ document.addEventListener("DOMContentLoaded", function () {
 
   function generateCitations() {
     const data = {
-      title: inputs[0].value,
-      author: inputs[1].value || "",
-      year: inputs[2].value,
-      url: currentUrl,
+      title: inputs[0].value.trim(),
+      author: inputs[1].value.trim() || "",
+      year: inputs[2].value.trim(),
+      url: currentUrl.trim(),
     };
 
-    const key = `${data.title.split(" ")[0].toLowerCase()}${data.year}`;
+    // データが空の場合は生成しない
+    if (!data.title && !data.author && !data.year && !data.url) {
+      outputs.bibtex.value = "";
+      outputs.textCite.value = "";
+      return;
+    }
+
+    const key = data.title
+      ? `${data.title.split(" ")[0].toLowerCase()}${data.year}`
+      : `cite${data.year || new Date().getFullYear()}`;
 
     outputs.bibtex.value = `@misc{${key},
       title = {{${data.title}}},
@@ -100,20 +133,17 @@ document.addEventListener("DOMContentLoaded", function () {
       note = {Online; accessed ${new Date().toISOString().split("T")[0]}}
     }`;
 
-    // 各フィールドを条件付きで組み立てる
     const citeParts = [];
     if (data.author) citeParts.push(data.author);
     if (data.title) citeParts.push(`『${data.title}』`);
     if (data.year) citeParts.push(data.year);
     if (data.url) citeParts.push(data.url);
-
-    // 日付は常に表示
     citeParts.push(`${new Date().toLocaleDateString("ja-JP")}閲覧`);
 
-    // 配列の要素を結合して出力
     outputs.textCite.value = citeParts.join(", ") + ".";
   }
 
+  // 以下の部分は変更なし
   inputs.forEach((input) => {
     input.addEventListener("input", generateCitations);
   });
@@ -126,23 +156,25 @@ document.addEventListener("DOMContentLoaded", function () {
     inputs.forEach((input) => (input.value = ""));
     outputs.bibtex.value = "";
     outputs.textCite.value = "";
-    // クリア時にURLもリセット
     currentUrl = "";
   });
 
   ["copyBibtex", "copyText"].forEach((id) => {
     document.getElementById(id).addEventListener("click", async () => {
-      // デバッグ用のログを追加
-      console.log("Button clicked:", id);
-
-      // outputTypeの取得を修正
       const outputType = id === "copyBibtex" ? "bibtex" : "textCite";
-      console.log("Output type:", outputType);
-      console.log("Text to copy:", outputs[outputType].value);
-
       const text = outputs[outputType].value;
 
       try {
+        await navigator.clipboard.writeText(text);
+        const button = document.getElementById(id);
+        const originalText = button.textContent;
+        button.textContent = "Copied!";
+        setTimeout(() => {
+          button.textContent = originalText;
+        }, 1000);
+      } catch (err) {
+        console.error("Failed to copy text:", err);
+        // フォールバックメソッド
         const textarea = document.createElement("textarea");
         textarea.value = text;
         textarea.style.position = "fixed";
@@ -151,27 +183,23 @@ document.addEventListener("DOMContentLoaded", function () {
         document.body.appendChild(textarea);
         textarea.select();
 
-        // コピーの実行
-        const success = document.execCommand("copy");
-        document.body.removeChild(textarea);
-
-        if (success) {
+        try {
+          document.execCommand("copy");
           const button = document.getElementById(id);
           const originalText = button.textContent;
           button.textContent = "Copied!";
           setTimeout(() => {
             button.textContent = originalText;
           }, 1000);
-        } else {
-          console.error("execCommand returned false");
+        } catch (e) {
+          console.error("Fallback copy failed:", e);
+        } finally {
+          document.body.removeChild(textarea);
         }
-      } catch (err) {
-        console.error("Failed to copy text:", err);
       }
     });
   });
 
-  // バージョン情報を表示する関数を追加
   async function displayVersion() {
     try {
       const manifest = chrome.runtime.getManifest();
@@ -184,6 +212,5 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   }
 
-  // バージョン情報を表示
   displayVersion();
 });
