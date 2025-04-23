@@ -1,6 +1,6 @@
 # Citation Generator Chrome Extension
 
-このChrome拡張機能は、学術論文の引用を簡単に生成するためのツールです。BibTeXと文中引用の形式に対応しています。
+このChrome拡張機能は、学術論文の引用を簡単に生成するためのツールです。BibTeXと文中引用の形式に対応しています。 <br/>
 <img src="assets/説明用.gif" alt="説明用" width="500"/>
 
 ## インストール手順
