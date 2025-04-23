@@ -45,6 +45,8 @@ document.addEventListener("DOMContentLoaded", function () {
           function: () => {
             const getMetadata = () => {
               const title = document.title;
+
+              // 著者情報を取得するセレクタ
               const authorSelectors = [
                 'meta[name="author"]',
                 'meta[property="author"]',
@@ -58,10 +60,95 @@ document.addEventListener("DOMContentLoaded", function () {
                   .map((selector) => document.querySelector(selector)?.content)
                   .find((content) => content) || "";
 
+              // 最終更新日を取得するセレクタ（優先度高）
+              const lastModifiedSelectors = [
+                'meta[name="last-modified"]',
+                'meta[property="article:modified_time"]',
+                'meta[property="og:updated_time"]',
+                'meta[name="revised"]',
+                'meta[name="DC.date.modified"]',
+                'meta[itemprop="dateModified"]',
+              ];
+
+              // 出版年/日付を取得するセレクタ（優先度低）
+              const dateSelectors = [
+                'meta[name="date"]',
+                'meta[property="article:published_time"]',
+                'meta[name="DC.date.issued"]',
+                'meta[name="publication_date"]',
+                'meta[name="publish_date"]',
+                'meta[property="og:published_time"]',
+                'meta[itemprop="datePublished"]',
+                "time[datetime]", // HTML5のtime要素
+                'meta[name="citation_date"]',
+              ];
+
+              // 年の抽出を行う関数
+              const extractYear = (dateContent) => {
+                if (!dateContent) return null;
+
+                try {
+                  // ISO形式の日付から年を抽出
+                  const date = new Date(dateContent);
+                  if (!isNaN(date.getFullYear())) {
+                    return date.getFullYear();
+                  }
+                } catch (e) {
+                  // 日付の解析に失敗した場合
+                }
+
+                // 正規表現で年を抽出
+                const yearMatch = dateContent.match(/\b(19|20)\d{2}\b/);
+                if (yearMatch) {
+                  return yearMatch[0];
+                }
+
+                return null;
+              };
+
+              // 最初に最終更新日を検索（優先）
+              let year = null;
+
+              for (const selector of lastModifiedSelectors) {
+                const element = document.querySelector(selector);
+                if (element) {
+                  const dateContent =
+                    element.getAttribute("content") ||
+                    element.getAttribute("datetime");
+                  const extractedYear = extractYear(dateContent);
+                  if (extractedYear) {
+                    year = extractedYear;
+                    break;
+                  }
+                }
+              }
+
+              // 最終更新日が見つからなければ、出版日を検索
+              if (!year) {
+                for (const selector of dateSelectors) {
+                  const element = document.querySelector(selector);
+                  if (element) {
+                    const dateContent =
+                      element.getAttribute("content") ||
+                      element.getAttribute("datetime");
+                    const extractedYear = extractYear(dateContent);
+                    if (extractedYear) {
+                      year = extractedYear;
+                      break;
+                    }
+                  }
+                }
+              }
+
+              // どちらも見つからない場合は現在の年を使用
+              if (!year) {
+                year = new Date().getFullYear();
+              }
+
               return {
                 title,
                 author,
-                year: new Date().getFullYear(),
+                year,
                 url: window.location.href,
               };
             };
@@ -125,11 +212,12 @@ document.addEventListener("DOMContentLoaded", function () {
       ? `${data.title.split(" ")[0].toLowerCase()}${data.year}`
       : `cite${data.year || new Date().getFullYear()}`;
 
+    // urlをhowpublishedに変更し、\urlコマンドを使用する形式に変更
     outputs.bibtex.value = `@misc{${key},
       title = {{${data.title}}},
       ${data.author ? `author = {{${data.author}}},` : ""}
       ${data.year ? `year = {{${data.year}}},` : ""}
-      ${data.url ? `howpublished = {\\url{${data.url}}},` : ""}
+      ${data.url ? `howpublished= {\\url{${data.url}}},` : ""}
       note = {Online; accessed ${new Date().toISOString().split("T")[0]}}
     }`;
 
