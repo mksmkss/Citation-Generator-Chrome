@@ -129,7 +129,7 @@ document.addEventListener("DOMContentLoaded", function () {
       title = {{${data.title}}},
       ${data.author ? `author = {{${data.author}}},` : ""}
       ${data.year ? `year = {{${data.year}}},` : ""}
-      ${data.url ? `url = {{${data.url}}},` : ""}
+      ${data.url ? `howpublished = {\\url{${data.url}}},` : ""}
       note = {Online; accessed ${new Date().toISOString().split("T")[0]}}
     }`;
 
